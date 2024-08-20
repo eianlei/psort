@@ -3,8 +3,9 @@
 # psort.py 
 
 import argparse
-import os
-from datetime import datetime
+import os, shutil
+from pathlib import Path
+from datetime import datetime, date, timedelta
 
 filecount = 0
 class File2move(object):
@@ -51,6 +52,13 @@ class ImportFile(object):
 
 ##################################################################################################### 
 def walk_dirs(c):
+    in_path = Path(c.import_dir)
+    if in_path.is_dir():
+        print(f'scanning {c.import_dir}')
+    else:
+        print(f'ABORT! does not exist: {c.import_dir}')
+        quit()
+        
     new_filecount = 0
     skipped_files = 0
 
@@ -143,23 +151,130 @@ def print_summary(c):
     return
 
 def extract_special(c):
+    out_dir = f'{c.output_dir}\\{c.special_dir}'
     print(f'SPECIAL: from {c.import_dir} extract date {c.special_date}')
-    print(f' to {c.output_dir}\\{c.special_dir}')
+    print(f' to {out_dir}')
     if c.special_date not in c.bin_days.keys():
         print(f'date {c.special_date} not found, abort operation')
+    
+    if c.mode_bat: 
+        batfile_name = f'move_{c.special_date}.bat'
+        batfile = open(batfile_name, mode="w")
+        batfile.write(f'REM this moves JPG files from {c.import_dir} to {out_dir}\n')
+        batfile.write('CHCP 1252\n')
+        batfile.write(f'MKDIR "{out_dir}"\n')
+        for file in c.bin_days[c.special_date]:
+            new_name = f'{out_dir}{os.sep}{file.filename}'
+            batfile.write(f'MOVE "{file.fullpath}" "{new_name}"\n')
+        batfile.close()     
+        print(f'created {batfile_name}') 
+    elif c.mode_dryrun:
+        print("# DRY RUN")
+        print(f'MKDIR "{out_dir}"')
+        for file in c.bin_days[c.special_date]:
+            new_name = f'{out_dir}{os.sep}{file.filename}'
+            print(f'MOVE "{file.fullpath}" "{new_name}"')
+    else:
+        dest_path = Path(out_dir)
+        if dest_path.is_dir():
+            print(f'directory {out_dir} exists already\n')
+        else:
+            print(f'creating {out_dir} \n')
+            Path.mkdir(dest_path)    
+        fnum = 0
+        for file in c.bin_days[c.special_date]:
+            #new_name = f'{out_dir}{os.sep}{file.filename}'
+            shutil.move(file.fullpath, dest_path)
+            fnum += 1
+        print(f'moved {fnum} files')                
+    return
+
+
+def extract_trip(c):
+    trip_dates = []
+    out_dir = f'{c.output_dir}{os.sep}{c.trip}'
+    day_out_dirs = {}
+    print(f'TRIP: from {c.import_dir} begin: {c.trip_begin} end: {c.trip_end}')
+    print(f' to {out_dir}, date prefix {c.trip_name} ')
+    # begin_date = date(year=int(c.trip_begin[0:4]), month=int(c.trip_begin[5:7]),day=int(c.trip_begin[8:10])) 
+    # end_date =   date(year=int(c.trip_end[0:4]),   month=int(c.trip_end[5:7]),  day=int(c.trip_end[8:10])) 
+    begin_date = datetime.strptime(c.trip_begin, "%Y-%m-%d")
+    end_date = datetime.strptime(c.trip_end, "%Y-%m-%d")
+    d = begin_date
+    delta = timedelta(days=1)
+    while d <= end_date:
+        ds = d.strftime('%Y-%m-%d')
+        if ds in c.bin_days.keys():
+            trip_dates.append(ds)
+            day_out_dir = f'{out_dir}{os.sep}{c.trip_name} {ds}'
+            day_out_dirs[ds] = day_out_dir
+            print(f'sub-dir "{c.trip_name} {ds}" {len(c.bin_days[ds])} files')
+        d += delta
+    
+
+    if c.mode_dryrun:
+        print("# DRY RUN")
+        print(f'MKDIR "{out_dir}"')
+        for date in trip_dates:
+            day_out_dir = day_out_dirs[date]
+            print(f'MKDIR "{day_out_dir}"')
+            for file in c.bin_days[date]:
+                new_name = f'{day_out_dir}{os.sep}{file.filename}'
+                print(f'MOVE "{file.fullpath}" "{new_name}"')
+        return
+    elif c.mode_bat: 
+        batfile_name = f'move_{c.trip}.bat'
+        batfile = open(batfile_name, mode="w")
+        batfile.write(f'REM this moves JPG files from {c.import_dir} to {out_dir}\n')
+        batfile.write('CHCP 1252\n')
+        batfile.write(f'MKDIR "{out_dir}"\n')
+        for date in trip_dates:
+            day_out_dir = day_out_dirs[date]
+            batfile.write(f'MKDIR "{day_out_dir}"\n')
+            for file in c.bin_days[date]:
+                new_name = f'{day_out_dir}{os.sep}{file.filename}'
+                batfile.write(f'MOVE "{file.fullpath}" "{new_name}"\n') 
+        batfile.close()     
+        print(f'created {batfile_name}') 
+        return
+    else:
+        dest_path = Path(out_dir)
+        if dest_path.is_dir():
+            print(f'directory {out_dir} exists already')
+        else:
+            print(f'creating {out_dir} \n')
+            Path.mkdir(dest_path)    
+        fnum = 0
+        dnum = 0
+        for date in trip_dates:
+            day_out_dir = day_out_dirs[date]
+            day_dest_path = Path(day_out_dir)
+            if day_dest_path.is_dir():
+                print(f'directory {day_out_dir} exists already')
+            else:
+                print(f'creating {day_out_dir} ')
+                Path.mkdir(day_dest_path)        
+
+            for file in c.bin_days[date]:
+                shutil.move(file.fullpath, day_dest_path)
+                fnum += 1
+            dnum += 1
+        print(f'moved {fnum} files for {dnum} days')                
     return
         
 ###############################################################################
 # Python script MAIN
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="import jpg and video files, sort and move to destinations")
-    parser.add_argument('-i','--input', help='input directory to be sorted')
-    parser.add_argument('-o','--output', help='output directory')
+    parser.add_argument('-i','--input', help='input directory to be sorted',required=True)
+    parser.add_argument('-o','--output', help='output directory') #,required=True)
     parser.add_argument('-t','--trip', help='do trip sorting, give trip label')
     parser.add_argument('-n','--name', help='for trip sorting daily prefix label')
     parser.add_argument('-s','--special', help='special date extraction, give date in b arg')    
     parser.add_argument('-b','--begin', help='begin date of the trip or special event date, format YYYY-MM-DD')
+    parser.add_argument('--batfile', help='create BAT file', action='store_true')
     parser.add_argument('-e','--end', help='end date of the trip, format YYYY-MM-DD')
+    parser.add_argument('-d','--dryrun', help='dry run, nothing touched', action='store_true')
     #
     parser.add_argument('-r','--report',help='report only',action='store_true')
     parser.add_argument('-z','--zort',help='report files sorted by dates',action='store_true')
@@ -171,8 +286,11 @@ if __name__ == "__main__":
     c = Psort_context()
     c.import_dir = args.input
     c.output_dir = args.output
+    c.trip_dir = args.trip
     c.special_dir = args.special
     c.special_date = args.begin
+    c.mode_bat = args.batfile
+    c.mode_dryrun = args.dryrun
     
     walk_dirs(c)
     group2dmy(c)
@@ -185,4 +303,12 @@ if __name__ == "__main__":
         print_summary(c)
     elif args.special:
         extract_special(c)
-        pass
+    elif args.trip:
+        c.trip = args.trip
+        c.trip_begin = args.begin
+        c.trip_end = args.end
+        c.trip_name = args.name
+        extract_trip(c)    
+    else:
+        print('no commands given')
+        quit()
