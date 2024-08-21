@@ -13,7 +13,7 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Python Debugger: args -i",
+            "name": "Python Debugger: args given",
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",

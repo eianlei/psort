@@ -6,6 +6,8 @@ import argparse
 import os, shutil
 from pathlib import Path
 from datetime import datetime, date, timedelta
+from progress.bar import Bar
+from exif import Image 
 
 filecount = 0
 class File2move(object):
@@ -42,6 +44,8 @@ class ImportFile(object):
         self.mtime_str = self.mtime_dt.strftime('%Y-%m-%d')
         self.mtime_year = self.mtime_dt.strftime('%Y')
         self.mtime_month = self.mtime_dt.strftime('%Y-%m')
+        self.exif = False
+        self.d_exif = ""
         self.size = os.path.getsize(self.fullpath)        
         self.basename = basename
         self.ext = ext
@@ -89,12 +93,22 @@ def walk_dirs(c):
 def report_files(c):
     print("JPG files")
     for file in c.jpg_list:
-        print(f'{file.number:>6} {file.filename:>16} {file.mtime_str} {file.size}') 
+        print(f'{file.number:>6} {file.filename:>16} {file.mtime_str} {file.size} {file.d_exif}') 
     print("Video files")
     for file in c.video_list:
         print(f'{file.number:>6} {file.filename:>16} {file.mtime_str} {file.size}')         
     return
 
+def special_day(c):
+    c.bin_days = {}
+    c.bin_days[c.special_date] = []
+    for file in c.jpg_list:
+        if file.mtime_str == c.special_date:
+            c.bin_days[c.special_date].append(file) 
+    if len(c.bin_days[c.special_date]) == 0:
+        print(f'{c.special_date} no files!!')
+        quit()
+    return        
 
 def group2dmy(c):
     day_keys = []
@@ -103,11 +117,21 @@ def group2dmy(c):
     bin_months = {}
     year_keys = []
     bin_years = {}
+    bar = Bar('group jpg files ', max=len(c.jpg_list))
     c.file_list.sort(key=lambda x: x.mtime)
     # iterate all files and bin them by mtime
     for file in c.jpg_list:
         # bin by days
         m_day = file.mtime_str
+        if c.mode_exif:
+            with open(file.fullpath, 'rb') as jpg_file:
+                jpg_bytes = jpg_file.read()
+            jpg_image = Image(jpg_bytes)    
+            if jpg_image.has_exif:
+                file.exif = True
+                file.d_exif = jpg_image.datetime_original
+                m_day = f'{file.d_exif[0:4]}-{file.d_exif[5:7]}-{file.d_exif[8:10]}'
+        
         if m_day in day_keys:
             bin_days[m_day].append(file)
         else:       
@@ -124,7 +148,9 @@ def group2dmy(c):
             bin_years[file.mtime_year].append(file)
         else:       
             year_keys.append(file.mtime_year)
-            bin_years[file.mtime_year] = [file]       
+            bin_years[file.mtime_year] = [file]      
+        bar.next()
+    bar.finish()     
     c.bin_days = bin_days
     c.bin_months = bin_months
     c.bin_years = bin_years
@@ -182,10 +208,13 @@ def extract_special(c):
             print(f'creating {out_dir} \n')
             Path.mkdir(dest_path)    
         fnum = 0
+        bar = Bar(f'moving {c.special_date}', max=len(c.bin_days[c.special_date]))
         for file in c.bin_days[c.special_date]:
             #new_name = f'{out_dir}{os.sep}{file.filename}'
             shutil.move(file.fullpath, dest_path)
             fnum += 1
+            bar.next()
+        bar.finish()    
         print(f'moved {fnum} files')                
     return
 
@@ -255,11 +284,61 @@ def extract_trip(c):
                 print(f'creating {day_out_dir} ')
                 Path.mkdir(day_dest_path)        
 
+            bar = Bar(f'moving {date}', max=len(c.bin_days[date]))
             for file in c.bin_days[date]:
                 shutil.move(file.fullpath, day_dest_path)
                 fnum += 1
+                bar.next()
+            bar.finish()    
             dnum += 1
         print(f'moved {fnum} files for {dnum} days')                
+    return
+
+def dir_create(dir, create):
+    dest_path = Path(dir)
+    if dest_path.is_dir():
+        print(f'directory {dir} exists already')
+        return
+    else:
+        print(f'creating {dir}')
+        if create:
+            Path.mkdir(dest_path)    
+    return
+  
+
+def extract_year(c, year):
+    out_dir = f'{c.output_dir}{os.sep}{year}'
+    this_year_months = []
+    for month in c.bin_months.keys():
+        if month[0:4] == year:
+            this_year_months.append(month)
+            
+    if c.mode_dryrun:
+        print(f"# DRY RUN {year}")
+        dir_create(out_dir, False)
+      
+        for month in this_year_months:
+            month_out_dir = f'{out_dir}{os.sep}{month}'
+            dir_create(month_out_dir, False)
+            for file in c.bin_months[month]:
+                new_name = f'{month_out_dir}{os.sep}{file.filename}'
+                print(f'MOVE "{file.fullpath}" "{new_name}"')
+    else:
+        dir_create(out_dir, True)
+        fnum = 0
+        mnum = 0
+        for month in this_year_months:
+            month_out_dir = f'{out_dir}{os.sep}{month}'
+            dir_create(month_out_dir, True)
+            bar = Bar(f'moving {month}', max=len(c.bin_months[month]))
+            for file in c.bin_months[month]:
+                new_name = f'{month_out_dir}{os.sep}{file.filename}'
+                shutil.move(file.fullpath, new_name)
+                fnum += 1
+                bar.next()
+            bar.finish()    
+            mnum += 1
+        print(f'moved {fnum} files for {mnum} months')          
     return
         
 ###############################################################################
@@ -275,10 +354,13 @@ if __name__ == "__main__":
     parser.add_argument('--batfile', help='create BAT file', action='store_true')
     parser.add_argument('-e','--end', help='end date of the trip, format YYYY-MM-DD')
     parser.add_argument('-d','--dryrun', help='dry run, nothing touched', action='store_true')
+    parser.add_argument('-l','--limit', help='file count limit to create directory for a date')
+    parser.add_argument('-y','--year', help='year to extract')
     #
     parser.add_argument('-r','--report',help='report only',action='store_true')
     parser.add_argument('-z','--zort',help='report files sorted by dates',action='store_true')
     parser.add_argument('--summary',help='summary of years, months, days',action='store_true')
+    parser.add_argument('--exif', help='use EXIF date instead of file timestamp', action='store_true')
 
     args = parser.parse_args()
     #de = dotenv.load_dotenv(verbose=True)
@@ -291,9 +373,15 @@ if __name__ == "__main__":
     c.special_date = args.begin
     c.mode_bat = args.batfile
     c.mode_dryrun = args.dryrun
+    c.mode_exif = args.exif
     
     walk_dirs(c)
-    group2dmy(c)
+    if args.special:
+        special_day(c)
+        extract_special(c)
+        quit()
+    else:
+        group2dmy(c)
 
     if args.report:
         report_files(c)
@@ -301,14 +389,16 @@ if __name__ == "__main__":
         print_sorted_days(c)
     elif args.summary:
         print_summary(c)
-    elif args.special:
-        extract_special(c)
+ 
     elif args.trip:
         c.trip = args.trip
         c.trip_begin = args.begin
         c.trip_end = args.end
         c.trip_name = args.name
         extract_trip(c)    
+        
+    elif args.year:
+        extract_year(c, args.year)
     else:
         print('no commands given')
         quit()
