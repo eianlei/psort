@@ -3,7 +3,7 @@
 # psort.py 
 
 import argparse
-import os, shutil
+import os, shutil, sys
 from pathlib import Path
 from datetime import datetime, date, timedelta
 from progress.bar import Bar
@@ -40,10 +40,11 @@ class ImportFile(object):
         self.fullpath = os.path.join(dirpath, filename)
         self.mtime = os.path.getmtime(self.fullpath)
         self.ctime = os.path.getctime(self.fullpath)
-        self.mtime_dt = datetime.fromtimestamp(self.mtime)
-        self.mtime_str = self.mtime_dt.strftime('%Y-%m-%d')
-        self.mtime_year = self.mtime_dt.strftime('%Y')
-        self.mtime_month = self.mtime_dt.strftime('%Y-%m')
+        self.otime = self.mtime if self.mtime <= self.ctime else self.ctime
+        self.otime_dt = datetime.fromtimestamp(self.otime)
+        self.otime_str = self.otime_dt.strftime('%Y-%m-%d')
+        self.otime_year = self.otime_dt.strftime('%Y')
+        self.otime_month = self.otime_dt.strftime('%Y-%m')
         self.exif = False
         self.d_exif = ""
         self.size = os.path.getsize(self.fullpath)        
@@ -65,12 +66,15 @@ def walk_dirs(c):
         
     new_filecount = 0
     skipped_files = 0
-
+    n = 0
     for dirpath, dirnames, filenames in os.walk(c.import_dir):
+        sys.stdout.write(f'{n}\r')
+        sys.stdout.flush()
+        n += 1
 
         for filename in filenames:
             basename, ext = os.path.splitext(filename)
-            fullpath = os.path.join(dirpath, filename)
+            #fullpath = os.path.join(dirpath, filename)
 
             ext = ext.upper()
             if ext in [".JPG", ".MP4" ]:
@@ -87,23 +91,25 @@ def walk_dirs(c):
                 # not interested other files
                 skipped_files += 1
                 continue
+            sys.stdout.write(f'{new_filecount} {skipped_files}\r')
+            sys.stdout.flush()
     c.import_total += new_filecount
     c.skipped_total += skipped_files
 
 def report_files(c):
     print("JPG files")
     for file in c.jpg_list:
-        print(f'{file.number:>6} {file.filename:>16} {file.mtime_str} {file.size} {file.d_exif}') 
+        print(f'{file.number:>6} {file.filename:>16} {file.otime_str} {file.size} {file.d_exif}') 
     print("Video files")
     for file in c.video_list:
-        print(f'{file.number:>6} {file.filename:>16} {file.mtime_str} {file.size}')         
+        print(f'{file.number:>6} {file.filename:>16} {file.otime_str} {file.size}')         
     return
 
 def special_day(c):
     c.bin_days = {}
     c.bin_days[c.special_date] = []
     for file in c.jpg_list:
-        if file.mtime_str == c.special_date:
+        if file.otime_str == c.special_date:
             c.bin_days[c.special_date].append(file) 
     if len(c.bin_days[c.special_date]) == 0:
         print(f'{c.special_date} no files!!')
@@ -118,11 +124,11 @@ def group2dmy(c):
     year_keys = []
     bin_years = {}
     bar = Bar('group jpg files ', max=len(c.jpg_list))
-    c.file_list.sort(key=lambda x: x.mtime)
-    # iterate all files and bin them by mtime
+    c.file_list.sort(key=lambda x: x.otime)
+    # iterate all files and bin them by otime
     for file in c.jpg_list:
         # bin by days
-        m_day = file.mtime_str
+        m_day = file.otime_str
         if c.mode_exif:
             with open(file.fullpath, 'rb') as jpg_file:
                 jpg_bytes = jpg_file.read()
@@ -138,17 +144,17 @@ def group2dmy(c):
             day_keys.append(m_day)
             bin_days[m_day] = [file]
         # bin by months    
-        if file.mtime_month in month_keys:
-            bin_months[file.mtime_month].append(file)
+        if file.otime_month in month_keys:
+            bin_months[file.otime_month].append(file)
         else:       
-            month_keys.append(file.mtime_month)
-            bin_months[file.mtime_month] = [file]            
+            month_keys.append(file.otime_month)
+            bin_months[file.otime_month] = [file]            
         # bin by years    
-        if file.mtime_year in year_keys:
-            bin_years[file.mtime_year].append(file)
+        if file.otime_year in year_keys:
+            bin_years[file.otime_year].append(file)
         else:       
-            year_keys.append(file.mtime_year)
-            bin_years[file.mtime_year] = [file]      
+            year_keys.append(file.otime_year)
+            bin_years[file.otime_year] = [file]      
         bar.next()
     bar.finish()     
     c.bin_days = bin_days
@@ -160,7 +166,7 @@ def print_sorted_days(c):
     for i, udate in enumerate(c.bin_days.keys()):
         print(f'== {i+1} {udate} { len(c.bin_days[udate]) }') 
         for file in c.bin_days[udate]:
-            print(f'{file.number:>6} {file.filename:>16} {file.mtime_str} {file.size}')  
+            print(f'{file.number:>6} {file.filename:>16} {file.otime_str} {file.size}')  
     
 def print_summary(c):
     print(f'*** Yearly bins: {len(c.bin_years)}')
