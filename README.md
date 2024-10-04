@@ -43,15 +43,15 @@ python psort.py -i "Z:\photos\INCOMING" –summary
 # report files grouped by dates of month 2024-01
 python psort.py -i "D:\MEDIA\JPG\HOME\2024\2024-01" -z
 
-# import a trip
+# import a trip to  "2024-01 Val Thorens" date range from 2024-01-27 to 2024-02-04
 python psort.py -i "Z:\photos\INCOMING" -t "2024-01 Val Thorens" -b 2024-01-27 -e 2024-02-04 -o "D:\MEDIA\JPG\TRAVEL" -n "Val Thorens"
 
-# import a trip using EXIF dates
+# import a trip using EXIF dates instead of file time stamps, NOTE: VERY SLOW!
 python psort.py -i "Z:\photos\INCOMING" -t "2024-02D Seahorse" -b 2024-02-07 -e 2024-02-24 -o "D:\MEDIA\JPG\TRAVEL" -n "Indonesia" --exif
 
-# import some special dates
+# import "2023-12-24 xmas-eve"
 python psort.py -i "Z:\photos\INCOMING" -s "2023-12-24 xmas-eve" -b 2023-12-24 -o "D:\MEDIA\JPG\HOME\2023"
 
-# import all files from year 2024 to 
+# import all files from year 2024 
 python psort.py -i "Z:\photos\INCOMING" -o "D:\MEDIA\JPG\HOME" --year 2024
 ```
