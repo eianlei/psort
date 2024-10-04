@@ -1,4 +1,7 @@
-move_2024-01 Val Thorens.bat
-move_2024-07D Red Sea (Sinaistar).bat
-move_2024-08-17.bat
-move_2024-08-18.bat
+# Ignore everything
+*
+
+# But not these files...
+!.gitignore
+!*.py
+!README

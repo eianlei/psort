@@ -306,9 +306,25 @@ def dir_create(dir, create):
         print(f'directory {dir} exists already')
         return
     else:
-        print(f'creating {dir}')
         if create:
+            print(f'really creating {dir}')
             Path.mkdir(dest_path)    
+        else:
+            print(f'dryrun: would create {dir}')
+    return
+
+def copymove(source, destination, dryrun, move):
+    dest_path = Path(destination)
+    if dest_path.is_file():
+        print(f'{destination} exists already')
+    if dryrun:
+        op = 'MOVE' if move else 'COPY'
+        print(f'dryrun: {op} "{source}" "{destination}"')
+    else:
+        if move:
+            shutil.move(source, destination)
+        else:
+            shutil.copy2(source, destination)
     return
   
 
