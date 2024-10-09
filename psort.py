@@ -22,6 +22,17 @@ class Psort_context(object):
     """    
     def __init__(self) -> None:   
         self.import_dir = ""
+        self.output_dir = ""
+        self.trip_dir = ""
+        self.trip_begin = ""
+        self.trip_end = ""
+        self.trip_name = ""
+        self.special_dir = ""
+        self.special_date = ""
+        self.mode_bat = False
+        self.mode_dryrun = False
+        self.mode_exif = False
+        self.mode_move = False
         self.file_list = []     
         self.jpg_list = []
         self.video_list = []
@@ -226,8 +237,14 @@ def extract_special(c):
 
 
 def extract_trip(c):
+    """_summary_ implements --trip
+
+    Args:
+        c (Psort_context): 
+        c.trip_dir trip subdirectory name
+    """
     trip_dates = []
-    out_dir = f'{c.output_dir}{os.sep}{c.trip}'
+    out_dir = f'{c.output_dir}{os.sep}{c.trip_dir}'
     day_out_dirs = {}
     print(f'TRIP: from {c.import_dir} begin: {c.trip_begin} end: {c.trip_end}')
     print(f' to {out_dir}, date prefix {c.trip_name} ')
@@ -258,7 +275,7 @@ def extract_trip(c):
                 print(f'MOVE "{file.fullpath}" "{new_name}"')
         return
     elif c.mode_bat: 
-        batfile_name = f'move_{c.trip}.bat'
+        batfile_name = f'move_{c.trip_dir}.bat'
         batfile = open(batfile_name, mode="w")
         batfile.write(f'REM this moves JPG files from {c.import_dir} to {out_dir}\n')
         batfile.write('CHCP 1252\n')
@@ -383,6 +400,7 @@ if __name__ == "__main__":
     parser.add_argument('-z','--zort',help='report files sorted by dates',action='store_true')
     parser.add_argument('--summary',help='summary of years, months, days',action='store_true')
     parser.add_argument('--exif', help='use EXIF date instead of file timestamp', action='store_true')
+    parser.add_argument('-M', '--move', help='move files instead of copy, copy is default', action='store_true')
 
     args = parser.parse_args()
     #de = dotenv.load_dotenv(verbose=True)
@@ -390,12 +408,13 @@ if __name__ == "__main__":
     c = Psort_context()
     c.import_dir = args.input
     c.output_dir = args.output
-    c.trip_dir = args.trip
+    # c.trip_dir = args.trip
     c.special_dir = args.special
     c.special_date = args.begin
     c.mode_bat = args.batfile
     c.mode_dryrun = args.dryrun
     c.mode_exif = args.exif
+    c.mode_move = args.move
     
     walk_dirs(c)
     if args.special:
@@ -413,7 +432,7 @@ if __name__ == "__main__":
         print_summary(c)
  
     elif args.trip:
-        c.trip = args.trip
+        c.trip_dir = args.trip
         c.trip_begin = args.begin
         c.trip_end = args.end
         c.trip_name = args.name
@@ -424,3 +443,5 @@ if __name__ == "__main__":
     else:
         print('no commands given')
         quit()
+    quit()    
+        
