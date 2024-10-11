@@ -31,6 +31,7 @@ class Psort_context(object):
         self.special_date = ""
         self.mode_bat = False
         self.mode_dryrun = False
+        self.dryrun_file = "dryrun.txt"
         self.mode_exif = False
         self.mode_move = False
         self.file_list = []     
@@ -317,26 +318,28 @@ def extract_trip(c):
         print(f'moved {fnum} files for {dnum} days')                
     return
 
-def dir_create(dir, create):
+def dir_create(dir, dryrun):
     dest_path = Path(dir)
     if dest_path.is_dir():
         print(f'directory {dir} exists already')
         return
     else:
-        if create:
+        if dryrun:
+            c.dryrun_fd.write(f'dryrun: would create {dir}\n')
+
+        else:
             print(f'really creating {dir}')
             Path.mkdir(dest_path)    
-        else:
-            print(f'dryrun: would create {dir}')
     return
 
 def copymove(source, destination, dryrun, move):
     dest_path = Path(destination)
     if dest_path.is_file():
         print(f'{destination} exists already')
+        return
     if dryrun:
         op = 'MOVE' if move else 'COPY'
-        print(f'dryrun: {op} "{source}" "{destination}"')
+        c.dryrun_fd.write(f'dryrun: {op} "{source}" "{destination}"\n')
     else:
         if move:
             shutil.move(source, destination)
@@ -346,64 +349,71 @@ def copymove(source, destination, dryrun, move):
   
 
 def extract_year(c, year):
-    out_dir = f'{c.output_dir}{os.sep}{year}'
+
     this_year_months = []
     for month in c.bin_months.keys():
         if month[0:4] == year:
             this_year_months.append(month)
             
-    if c.mode_dryrun:
-        print(f"# DRY RUN {year}")
-        dir_create(out_dir, False)
-      
-        for month in this_year_months:
-            month_out_dir = f'{out_dir}{os.sep}{month}'
-            dir_create(month_out_dir, False)
-            for file in c.bin_months[month]:
-                new_name = f'{month_out_dir}{os.sep}{file.filename}'
-                print(f'MOVE "{file.fullpath}" "{new_name}"')
-    else:
-        dir_create(out_dir, True)
-        fnum = 0
-        mnum = 0
-        for month in this_year_months:
-            month_out_dir = f'{out_dir}{os.sep}{month}'
-            dir_create(month_out_dir, True)
-            bar = Bar(f'moving {month}', max=len(c.bin_months[month]))
-            for file in c.bin_months[month]:
-                new_name = f'{month_out_dir}{os.sep}{file.filename}'
-                shutil.move(file.fullpath, new_name)
-                fnum += 1
-                bar.next()
-            bar.finish()    
-            mnum += 1
-        print(f'moved {fnum} files for {mnum} months')          
+    out_dir = f'{c.output_dir}{os.sep}{year}'
+    dir_create(out_dir, c.mode_dryrun)
+    fnum = 0
+    mnum = 0
+    for month in this_year_months:
+        month_out_dir = f'{out_dir}{os.sep}{month}'
+        dir_create(month_out_dir, c.mode_dryrun)
+        bar = Bar(f'moving {month}', max=len(c.bin_months[month]))
+        for file in c.bin_months[month]:
+            new_name = f'{month_out_dir}{os.sep}{file.filename}'
+            # shutil.move(file.fullpath, new_name)
+            copymove(file.fullpath, new_name, c.mode_dryrun, c.mode_move)
+            fnum += 1
+            bar.next()
+        bar.finish()    
+        mnum += 1
+    print(f'moved {fnum} files for {mnum} months')          
     return
+
+def version_print():
+    version = 0.1
+    print(f'psort.py version {version}')
+    print('CC BY-NC-SA 4.0 Copyright (c) 2024 Ian Leiman')
+    print('https://creativecommons.org/licenses/by-nc-sa/4.0/')
         
 ###############################################################################
 # Python script MAIN
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="import jpg and video files, sort and move to destinations")
-    parser.add_argument('-i','--input', help='input directory to be sorted',required=True)
+    group1 = parser.add_mutually_exclusive_group(required=True)
+    group1.add_argument('-i','--input', help='input directory to be sorted')
+    group1.add_argument('-v','--version', help='version information', action='store_true') 
+    #
+    group2 = parser.add_mutually_exclusive_group()
+    group2.add_argument('-y', '--year', help='year to extract')
+    group2.add_argument('-s', '--special', help='special date extraction, give date in b arg')       
+    group2.add_argument('-t', '--trip', help='do trip sorting, give trip label')    
+    group2.add_argument('-r', '--report',help='report only',action='store_true')
+    group2.add_argument('-z', '--zort',help='report files sorted by dates',action='store_true')
+    group2.add_argument('-S', '--summary',help='summary of years, months, days',action='store_true')
+    #
     parser.add_argument('-o','--output', help='output directory') #,required=True)
-    parser.add_argument('-t','--trip', help='do trip sorting, give trip label')
     parser.add_argument('-n','--name', help='for trip sorting daily prefix label')
-    parser.add_argument('-s','--special', help='special date extraction, give date in b arg')    
     parser.add_argument('-b','--begin', help='begin date of the trip or special event date, format YYYY-MM-DD')
-    parser.add_argument('--batfile', help='create BAT file', action='store_true')
+    parser.add_argument('-B','--batfile', help='create BAT file', action='store_true')
     parser.add_argument('-e','--end', help='end date of the trip, format YYYY-MM-DD')
     parser.add_argument('-d','--dryrun', help='dry run, nothing touched', action='store_true')
     parser.add_argument('-l','--limit', help='file count limit to create directory for a date')
-    parser.add_argument('-y','--year', help='year to extract')
     #
-    parser.add_argument('-r','--report',help='report only',action='store_true')
-    parser.add_argument('-z','--zort',help='report files sorted by dates',action='store_true')
-    parser.add_argument('--summary',help='summary of years, months, days',action='store_true')
+
     parser.add_argument('--exif', help='use EXIF date instead of file timestamp', action='store_true')
     parser.add_argument('-M', '--move', help='move files instead of copy, copy is default', action='store_true')
 
     args = parser.parse_args()
     #de = dotenv.load_dotenv(verbose=True)
+    
+    if args.version:
+        version_print()
+        quit()
     
     c = Psort_context()
     c.import_dir = args.input
@@ -415,6 +425,8 @@ if __name__ == "__main__":
     c.mode_dryrun = args.dryrun
     c.mode_exif = args.exif
     c.mode_move = args.move
+    c.dryrun_file = "dryrun.txt"
+    c.dryrun_fd = open(c.dryrun_file, 'w')
     
     walk_dirs(c)
     if args.special:
@@ -440,6 +452,7 @@ if __name__ == "__main__":
         
     elif args.year:
         extract_year(c, args.year)
+        c.dryrun_fd.close()
     else:
         print('no commands given')
         quit()
