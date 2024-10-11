@@ -124,7 +124,6 @@ def analyze_file(c, full_path):
     if ext in [".JPG", ".MP4" ]:
         c.import_total += 1
         new_file = ImportFile(dirpath, filename, ext, c.import_total, basename)
-
         c.file_list.append(new_file)
         match ext:
             case '.JPG': 
@@ -147,7 +146,14 @@ def scan_files_rec2(c, path):
             scan_files_rec2(c, entry)
             c.subdirs +=1
         elif entry.is_file():
-            analyze_file(c, entry)     
+                        # get datetime of the file mtime
+            fdt = datetime.fromtimestamp( os.stat(entry).st_mtime)
+            if fdt > c.date:
+                analyze_file(c, entry)     
+            else:
+                c.skipped_total += 1
+                sys.stdout.write(f'{c.import_total} {c.skipped_total}\r')
+                sys.stdout.flush()    
     obj.close()
     return
     
@@ -163,12 +169,18 @@ def scan_files_recursive(c, path):
 
 def scan_files_iterdir(c, path):
     # print(f'iter {path.name}')
-    for entry in path.iterdir():
+    obj = path.iterdir()
+    for entry in obj:
         if entry.is_dir():
             c.subdirs +=1
             scan_files_iterdir(c, entry)
         elif entry.is_file():
-            analyze_file(c, entry)     
+            # get datetime of the file mtime
+            fdt = datetime.fromtimestamp( os.stat(entry).st_mtime)
+            if fdt > c.date:
+                analyze_file(c, entry)     
+            else:
+                c.skipped_total += 1
     return
 
 def check_import_dir(c):
@@ -433,7 +445,8 @@ def extract_year(c, year):
     for month in this_year_months:
         month_out_dir = f'{out_dir}{os.sep}{month}'
         dir_create(month_out_dir, c.mode_dryrun)
-        bar = Bar(f'moving {month}', max=len(c.bin_months[month]))
+        op = 'MOVing' if c.mode_move else 'COPYing'
+        bar = Bar(f'{op} {month}', max=len(c.bin_months[month]))
         for file in c.bin_months[month]:
             new_name = f'{month_out_dir}{os.sep}{file.filename}'
             # shutil.move(file.fullpath, new_name)
@@ -462,6 +475,7 @@ if __name__ == "__main__":
     #
     group2 = parser.add_mutually_exclusive_group()
     group2.add_argument('-y', '--year', help='year to extract')
+    
     group2.add_argument('-s', '--special', help='special date extraction, give date in b arg')       
     group2.add_argument('-t', '--trip', help='do trip sorting, give trip label')    
     group2.add_argument('-r', '--report',help='report only',action='store_true')
@@ -475,6 +489,7 @@ if __name__ == "__main__":
     parser.add_argument('-e','--end', help='end date of the trip, format YYYY-MM-DD')
     parser.add_argument('-d','--dryrun', help='dry run, nothing touched', action='store_true')
     parser.add_argument('-l','--limit', help='file count limit to create directory for a date')
+    parser.add_argument('-D','--date', help= 'start date for copy/move')
     #
 
     parser.add_argument('--exif', help='use EXIF date instead of file timestamp', action='store_true')
@@ -498,6 +513,13 @@ if __name__ == "__main__":
     c.mode_exif = args.exif
     c.mode_move = args.move
     
+    if args.date:
+        c.date = datetime.strptime(args.date, "%Y-%m-%d")
+        print(f'start date {c.date.isoformat()}')
+    else:
+        c.date = datetime(year=1900,month=1, day=1)
+        print('no start date given')
+    
     if args.dryrun:
         c.dryrun_file = "dryrun.txt"
         print(f"*** DRY RUN MODE *** nothing is actually done, after exit read {c.dryrun_file} ")
@@ -509,8 +531,9 @@ if __name__ == "__main__":
     # walk_dirs(c)
     # scan_files_recursive(c, c.import_dir)
     # scan_files_iterdir(c, c.importPath)
+    # only the scan_files_rec2() iterates files one by one 
     scan_files_rec2(c, c.import_dir)
-    print(f'{c.import_total} files found, {len(c.jpg_list)} JPG, in {c.subdirs} sub directories')
+    print(f'{c.import_total} files importing, {c.skipped_total} skipped, {len(c.jpg_list)} JPG, in {c.subdirs} sub directories')
     
     if args.special:
         special_day(c)
