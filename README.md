@@ -61,6 +61,8 @@ python psort.py -i "Z:\photos\INCOMING" -s "2023-12-24 xmas-eve" -b 2023-12-24 -
 python psort.py -i "Z:\photos\INCOMING" -o "D:\MEDIA\JPG\HOME" --year 2024
 ```
 # detailed functionality
+## dry run
+--dryrun option allows simulating what would happen if the app is run. In the dryrun mode nothing is actually done but the a file dryrun.txt is created which contains a log of actions that would take place.
 
 ## creation of destination directories
 Destination directories are created automatically if they do not exist already. If destination directories do already exist, there is no error but a notification is given. 

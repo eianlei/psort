@@ -418,11 +418,20 @@ def dir_create(dir, dryrun):
 def copymove(source, destination, dryrun, move):
     dest_path = Path(destination)
     if dest_path.is_file():
-        print(f'{destination} exists already')
-        return
+        if dryrun:
+            c.dryrun_fd.write(f'WARN: "{source}" already at "{destination}"\n')
+            return
+        if c.mode_nodup:
+            root, ext = os.path.splitext(destination)
+            destination = f'{root}(1){ext}'
+            print(f'file exists, rename {destination}')
+        else:
+            print(f'{destination} exists already')
+            return
+
     if dryrun:
         op = 'MOVE' if move else 'COPY'
-        c.dryrun_fd.write(f'dryrun: {op} "{source}" "{destination}"\n')
+        c.dryrun_fd.write(f'{op} "{source}" "{destination}"\n')
     else:
         if move:
             shutil.move(source, destination)
@@ -494,6 +503,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--exif', help='use EXIF date instead of file timestamp', action='store_true')
     parser.add_argument('-M', '--move', help='move files instead of copy, copy is default', action='store_true')
+    parser.add_argument('-X', '--nodup', help='do not skip duplicates at destination but rename a copy')
 
     args = parser.parse_args()
     #de = dotenv.load_dotenv(verbose=True)
@@ -512,6 +522,7 @@ if __name__ == "__main__":
     c.mode_dryrun = args.dryrun
     c.mode_exif = args.exif
     c.mode_move = args.move
+    c.mode_nodup = args.nodup
     
     if args.date:
         c.date = datetime.strptime(args.date, "%Y-%m-%d")
