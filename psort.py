@@ -3,6 +3,7 @@
 # psort.py 
 
 import argparse
+import atexit
 import os, shutil, sys
 from pathlib import Path
 from datetime import datetime, date, timedelta
@@ -22,6 +23,7 @@ class Psort_context(object):
     """    
     def __init__(self) -> None:   
         self.import_dir = ""
+        self.importPath = None
         self.output_dir = ""
         self.trip_dir = ""
         self.trip_begin = ""
@@ -39,6 +41,7 @@ class Psort_context(object):
         self.video_list = []
         self.import_total = 0
         self.skipped_total = 0
+        self.subdirs = 0
         self.bin_days = {}
         self.bin_months = {}    
         self.bin_years = {}
@@ -107,6 +110,74 @@ def walk_dirs(c):
             sys.stdout.flush()
     c.import_total += new_filecount
     c.skipped_total += skipped_files
+    
+def analyze_file(c, full_path):
+    if isinstance(full_path, Path):
+        filename = full_path.name     
+    else:    
+        filename = os.path.basename(full_path)
+    basename, ext = os.path.splitext(filename)
+    dirpath = os.path.dirname(full_path)
+    #full_path = os.path.join(dirpath, filename)
+
+    ext = ext.upper()
+    if ext in [".JPG", ".MP4" ]:
+        c.import_total += 1
+        new_file = ImportFile(dirpath, filename, ext, c.import_total, basename)
+
+        c.file_list.append(new_file)
+        match ext:
+            case '.JPG': 
+                c.jpg_list.append(new_file)
+            case '.MP4': 
+                c.video_list.append(new_file)
+    else:    
+        # not interested other files
+        c.skipped_total += 1
+        
+    sys.stdout.write(f'{c.import_total} {c.skipped_total}\r')
+    sys.stdout.flush()    
+    return
+
+
+def scan_files_rec2(c, path):
+    obj = os.scandir(path)
+    for entry in obj:
+        if entry.is_dir():
+            scan_files_rec2(c, entry)
+            c.subdirs +=1
+        elif entry.is_file():
+            analyze_file(c, entry)     
+    obj.close()
+    return
+    
+def scan_files_recursive(c, path):
+    for entry in os.listdir(path):
+        full_path = os.path.join(path, entry)
+        if os.path.isdir(full_path):
+            c.subdirs +=1
+            scan_files_recursive(c, full_path)
+        else:
+            analyze_file(c, full_path)     
+    return
+
+def scan_files_iterdir(c, path):
+    # print(f'iter {path.name}')
+    for entry in path.iterdir():
+        if entry.is_dir():
+            c.subdirs +=1
+            scan_files_iterdir(c, entry)
+        elif entry.is_file():
+            analyze_file(c, entry)     
+    return
+
+def check_import_dir(c):
+    c.importPath = Path(c.import_dir)
+    if c.importPath.is_dir():
+        print(f'scanning {c.import_dir}')
+    else:
+        print(f'ABORT! does not exist: {c.import_dir}')
+        quit()
 
 def report_files(c):
     print("JPG files")
@@ -371,7 +442,8 @@ def extract_year(c, year):
             bar.next()
         bar.finish()    
         mnum += 1
-    print(f'moved {fnum} files for {mnum} months')          
+    op = 'MOVEed' if c.mode_move else 'COPied'
+    print(f'year {year}: {op} {fnum} files for {mnum} months')          
     return
 
 def version_print():
@@ -425,10 +497,21 @@ if __name__ == "__main__":
     c.mode_dryrun = args.dryrun
     c.mode_exif = args.exif
     c.mode_move = args.move
-    c.dryrun_file = "dryrun.txt"
-    c.dryrun_fd = open(c.dryrun_file, 'w')
     
-    walk_dirs(c)
+    if args.dryrun:
+        c.dryrun_file = "dryrun.txt"
+        print(f"*** DRY RUN MODE *** nothing is actually done, after exit read {c.dryrun_file} ")
+        c.dryrun_fd = open(c.dryrun_file, 'w')
+        atexit.register(c.dryrun_fd.close)
+    
+
+    check_import_dir(c)
+    # walk_dirs(c)
+    # scan_files_recursive(c, c.import_dir)
+    # scan_files_iterdir(c, c.importPath)
+    scan_files_rec2(c, c.import_dir)
+    print(f'{c.import_total} files found, {len(c.jpg_list)} JPG, in {c.subdirs} sub directories')
+    
     if args.special:
         special_day(c)
         extract_special(c)
@@ -452,7 +535,7 @@ if __name__ == "__main__":
         
     elif args.year:
         extract_year(c, args.year)
-        c.dryrun_fd.close()
+        # c.dryrun_fd.close() done by atexit
     else:
         print('no commands given')
         quit()
