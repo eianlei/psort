@@ -332,75 +332,45 @@ def extract_trip(c):
     trip_dates = []
     out_dir = f'{c.output_dir}{os.sep}{c.trip_dir}'
     day_out_dirs = {}
-    print(f'TRIP: from {c.import_dir} begin: {c.trip_begin} end: {c.trip_end}')
-    print(f' to {out_dir}, date prefix {c.trip_name} ')
-    # begin_date = date(year=int(c.trip_begin[0:4]), month=int(c.trip_begin[5:7]),day=int(c.trip_begin[8:10])) 
-    # end_date =   date(year=int(c.trip_end[0:4]),   month=int(c.trip_end[5:7]),  day=int(c.trip_end[8:10])) 
+    
+    begin_txt = f'TRIP: from {c.import_dir} begin: {c.trip_begin} end: {c.trip_end} to {out_dir}, date prefix {c.trip_name}'
+    print(begin_txt)
+    print2log(c.logfile_fd, begin_txt)
+    
     begin_date = datetime.strptime(c.trip_begin, "%Y-%m-%d")
-    end_date = datetime.strptime(c.trip_end, "%Y-%m-%d")
-    d = begin_date
-    delta = timedelta(days=1)
-    while d <= end_date:
-        ds = d.strftime('%Y-%m-%d')
+    end_date   = datetime.strptime(c.trip_end, "%Y-%m-%d")
+    one_day    = timedelta(days=1)
+    
+    # create trip_dates[] list
+    this_date = begin_date
+    while this_date <= end_date:
+        ds = this_date.strftime('%Y-%m-%d')
         if ds in c.bin_days.keys():
             trip_dates.append(ds)
             day_out_dir = f'{out_dir}{os.sep}{c.trip_name} {ds}'
             day_out_dirs[ds] = day_out_dir
             print(f'sub-dir "{c.trip_name} {ds}" {len(c.bin_days[ds])} files')
-        d += delta
+        this_date += one_day
     
+    # main functionality
+    dir_create(out_dir, c)
+    fnum = 0
+    dnum = 0
+    for date in trip_dates:
+        day_out_dir = day_out_dirs[date]
+        dir_create(day_out_dir, c)
 
-    if c.mode_dryrun:
-        print("# DRY RUN")
-        print(f'MKDIR "{out_dir}"')
-        for date in trip_dates:
-            day_out_dir = day_out_dirs[date]
-            print(f'MKDIR "{day_out_dir}"')
-            for file in c.bin_days[date]:
-                new_name = f'{day_out_dir}{os.sep}{file.filename}'
-                print(f'MOVE "{file.fullpath}" "{new_name}"')
-        return
-    elif c.mode_bat: 
-        batfile_name = f'move_{c.trip_dir}.bat'
-        batfile = open(batfile_name, mode="w")
-        batfile.write(f'REM this moves JPG files from {c.import_dir} to {out_dir}\n')
-        batfile.write('CHCP 1252\n')
-        batfile.write(f'MKDIR "{out_dir}"\n')
-        for date in trip_dates:
-            day_out_dir = day_out_dirs[date]
-            batfile.write(f'MKDIR "{day_out_dir}"\n')
-            for file in c.bin_days[date]:
-                new_name = f'{day_out_dir}{os.sep}{file.filename}'
-                batfile.write(f'MOVE "{file.fullpath}" "{new_name}"\n') 
-        batfile.close()     
-        print(f'created {batfile_name}') 
-        return
-    else:
-        dest_path = Path(out_dir)
-        if dest_path.is_dir():
-            print(f'directory {out_dir} exists already')
-        else:
-            print(f'creating {out_dir} \n')
-            Path.mkdir(dest_path)    
-        fnum = 0
-        dnum = 0
-        for date in trip_dates:
-            day_out_dir = day_out_dirs[date]
-            day_dest_path = Path(day_out_dir)
-            if day_dest_path.is_dir():
-                print(f'directory {day_out_dir} exists already')
-            else:
-                print(f'creating {day_out_dir} ')
-                Path.mkdir(day_dest_path)        
-
-            bar = Bar(f'moving {date}', max=len(c.bin_days[date]))
-            for file in c.bin_days[date]:
-                shutil.move(file.fullpath, day_dest_path)
-                fnum += 1
-                bar.next()
-            bar.finish()    
-            dnum += 1
-        print(f'moved {fnum} files for {dnum} days')                
+        bar = Bar(f'transfer {date}', max=len(c.bin_days[date]))
+        for file in c.bin_days[date]:
+            new_name = f'{day_out_dir}{os.sep}{file.filename}'
+            copymove(file.fullpath, new_name, c)
+            fnum += 1
+            bar.next()
+        bar.finish()    
+        dnum += 1
+    end_txt = f'transferred {fnum} files for {dnum} days'
+    print(end_txt) 
+    print2log(c.logfile_fd, end_txt)   
     return
 
 def dir_create(dir, c):
@@ -542,7 +512,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--exif', help='use EXIF date instead of file timestamp', action='store_true')
     parser.add_argument('-M', '--move', help='move files instead of copy, copy is default', action='store_true')
-    parser.add_argument('-X', '--nodup', help='do not skip duplicates at destination but rename a copy')
+    parser.add_argument('-X', '--nodup', help='do not skip duplicates at destination but rename a copy', action='store_true')
 
     args = parser.parse_args()
     #de = dotenv.load_dotenv(verbose=True)
