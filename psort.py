@@ -490,10 +490,12 @@ def extract_year(c, year):
     return
 
 def version_print():
-    version = 0.1
-    print(f'psort.py version {version}')
+    version = 0.7
+    release_date = "2024-10-12"
+    print(f'psort.py version {version} released {release_date}')
     print('CC BY-NC-SA 4.0 Copyright (c) 2024 Ian Leiman')
     print('https://creativecommons.org/licenses/by-nc-sa/4.0/')
+    print('https://github.com/eianlei/psort')
 
 def create_logfile(c):
     logtime = datetime.now().strftime('%Y%m%d_%H%M%S')
