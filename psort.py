@@ -297,44 +297,28 @@ def print_summary(c):
 
 def extract_special(c):
     out_dir = f'{c.output_dir}\\{c.special_dir}'
-    print(f'SPECIAL: from {c.import_dir} extract date {c.special_date}')
-    print(f' to {out_dir}')
     if c.special_date not in c.bin_days.keys():
-        print(f'date {c.special_date} not found, abort operation')
+        error_txt = f'date {c.special_date} not found, abort operation'
+        print(error_txt)
+        print2log(c.logfile_fd, error_txt)
+        return
     
-    if c.mode_bat: 
-        batfile_name = f'move_{c.special_date}.bat'
-        batfile = open(batfile_name, mode="w")
-        batfile.write(f'REM this moves JPG files from {c.import_dir} to {out_dir}\n')
-        batfile.write('CHCP 1252\n')
-        batfile.write(f'MKDIR "{out_dir}"\n')
-        for file in c.bin_days[c.special_date]:
-            new_name = f'{out_dir}{os.sep}{file.filename}'
-            batfile.write(f'MOVE "{file.fullpath}" "{new_name}"\n')
-        batfile.close()     
-        print(f'created {batfile_name}') 
-    elif c.mode_dryrun:
-        print("# DRY RUN")
-        print(f'MKDIR "{out_dir}"')
-        for file in c.bin_days[c.special_date]:
-            new_name = f'{out_dir}{os.sep}{file.filename}'
-            print(f'MOVE "{file.fullpath}" "{new_name}"')
-    else:
-        dest_path = Path(out_dir)
-        if dest_path.is_dir():
-            print(f'directory {out_dir} exists already\n')
-        else:
-            print(f'creating {out_dir} \n')
-            Path.mkdir(dest_path)    
-        fnum = 0
-        bar = Bar(f'moving {c.special_date}', max=len(c.bin_days[c.special_date]))
-        for file in c.bin_days[c.special_date]:
-            #new_name = f'{out_dir}{os.sep}{file.filename}'
-            shutil.move(file.fullpath, dest_path)
-            fnum += 1
-            bar.next()
-        bar.finish()    
-        print(f'moved {fnum} files')                
+    begin_txt = f'SPECIAL: from {c.import_dir} extract date {c.special_date} to {out_dir}'
+    print(begin_txt)
+    print2log(c.logfile_fd, begin_txt)
+    
+    dir_create(out_dir, c)
+    fnum = 0
+    bar = Bar(f'transfer {c.special_date}', max=len(c.bin_days[c.special_date]))
+    for file in c.bin_days[c.special_date]:
+        new_name = f'{out_dir}{os.sep}{file.filename}'
+        copymove(file.fullpath, new_name, c)
+        fnum += 1
+        bar.next()
+    bar.finish()    
+    end_txt = f'transerred {fnum} files'
+    print(end_txt)
+    print2log(c.logfile_fd, end_txt)
     return
 
 
@@ -570,8 +554,7 @@ if __name__ == "__main__":
     c.import_dir = args.input
     c.output_dir = args.output
     # c.trip_dir = args.trip
-    c.special_dir = args.special
-    c.special_date = args.begin
+
     c.mode_exif = args.exif
     c.mode_nodup = args.nodup
     
@@ -615,6 +598,16 @@ if __name__ == "__main__":
     print(f'{c.import_total} files importing, {c.skipped_total} skipped, {len(c.jpg_list)} JPG, in {c.subdirs} sub directories')
     
     if args.special:
+        if args.special != "":
+            c.special_dir = args.special
+        else:
+            print('no directory given as argument to -s')
+            quit()
+        if args.begin != "":
+            c.special_date = args.begin
+        else:
+            print('no date given as argument to -b')
+            quit()           
         special_day(c)
         extract_special(c)
         quit()
