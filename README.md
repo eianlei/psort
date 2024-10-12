@@ -2,6 +2,8 @@
 
 This command line app is used to sort incoming photo files from camera into a well organized directory structure. Photos can be sorted such that photos taken in each month go into their own directory, such as "../2024/05/", or photos taken on a specific date go to a specially named directory, such as "../2023-12-24 xmas-eve/", or photos taken during a specific range of days go to a special directory sorted by days, such as ".. /2024 Paris-vacation/Paris 2024-06-01/". The app is controlled by command line options and mainly intended to run on Windows, although there is nothing to prevent it running on Linux or Mac. The app can move the files itself, or it can create a Windows BAT-file to execute the moves, or you can do a dry run to verify first what would happen.
 
+The app always creates a log file.
+
 # dependencies
 - The Python app requires Python 3.10 or greater 
 - argparse
@@ -20,9 +22,9 @@ This command line app is used to sort incoming photo files from camera into a we
 | **s** | special | special date extraction, give date in b arg                     |
 | **b** | begin   | begin date of the trip or special event date, format YYYY-MM-DD |
 | **M** | move    | move files instead of copy, copy is default                     |
-|       | batfile | create BAT file, instead of executing moves                     |
+| **B** | batfile | create BAT file, instead of executing moves, file name as arg   |
 | **e** | end     | end date of the trip, format YYYY-MM-DD                         |
-| **d** | dryrun  | dry run, nothing touched                                        |
+| **d** | dryrun  | dry run, nothing touched, see logfile for simulated operations  |
 | **y** | year    | year to extract YYYY                                            |
 | **r** | report  | report only                                                     |
 | **z** | zort    | report files sorted by dates                                    |
@@ -61,8 +63,11 @@ python psort.py -i "Z:\photos\INCOMING" -s "2023-12-24 xmas-eve" -b 2023-12-24 -
 python psort.py -i "Z:\photos\INCOMING" -o "D:\MEDIA\JPG\HOME" --year 2024
 ```
 # detailed functionality
+## logfile
+The app always creates a log file about operations that were executed or would have been done in --dryrun mode.
+
 ## dry run
---dryrun option allows simulating what would happen if the app is run. In the dryrun mode nothing is actually done but the a file dryrun.txt is created which contains a log of actions that would take place.
+--dryrun option allows simulating what would happen if the app is run. In the dryrun mode nothing is actually done but the logfile is created which contains a log of actions that would take place.
 
 ## creation of destination directories
 Destination directories are created automatically if they do not exist already. If destination directories do already exist, there is no error but a notification is given. 

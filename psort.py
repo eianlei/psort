@@ -4,13 +4,20 @@
 
 import argparse
 import atexit
+from enum import Enum
 import os, shutil, sys
 from pathlib import Path
 from datetime import datetime, date, timedelta
 from progress.bar import Bar
 from exif import Image 
 
-filecount = 0
+class OPMODE(Enum):
+    DRYRUN = 1
+    MOVE = 2
+    COPY = 3
+    BATCOPY = 4
+    BATMOVE = 5
+
 class File2move(object):
     def __init__(self, old_name, new_name):
         self.old_name = old_name
@@ -22,6 +29,8 @@ class Psort_context(object):
 
     """    
     def __init__(self) -> None:   
+        self.args = ""
+        self.opmode = OPMODE.DRYRUN
         self.import_dir = ""
         self.importPath = None
         self.output_dir = ""
@@ -34,6 +43,10 @@ class Psort_context(object):
         self.mode_bat = False
         self.mode_dryrun = False
         self.dryrun_file = "dryrun.txt"
+        self.logfile_name = "log.txt"
+        self.logfile_fd = None
+        self.batfile_name = "PSORT.BAT"
+        self.batfile_fd = None
         self.mode_exif = False
         self.mode_move = False
         self.file_list = []     
@@ -45,6 +58,11 @@ class Psort_context(object):
         self.bin_days = {}
         self.bin_months = {}    
         self.bin_years = {}
+        self.ok_transfers = 0
+        self.skip_transfers = 0
+        self.rename_transfers = 0
+        self.newdirs_done = 0
+        self.newdirs_skip = 0
         #newdir_list = []
         #move_list = []
 
@@ -401,71 +419,90 @@ def extract_trip(c):
         print(f'moved {fnum} files for {dnum} days')                
     return
 
-def dir_create(dir, dryrun):
+def dir_create(dir, c):
     dest_path = Path(dir)
     if dest_path.is_dir():
-        print(f'directory {dir} exists already')
+        print2log(c.logfile_fd, f'directory {dir} exists already')
+        c.newdirs_skip += 1
         return
-    else:
-        if dryrun:
-            c.dryrun_fd.write(f'dryrun: would create {dir}\n')
-
-        else:
-            print(f'really creating {dir}')
+    match c.opmode:
+        case OPMODE.DRYRUN:
+            print2log(c.logfile_fd, f'dryrun: would create {dir}\n')
+            return
+        case OPMODE.MOVE | OPMODE.COPY:
+            print2log(c.logfile_fd, f' creating {dir}')
             Path.mkdir(dest_path)    
+            return
+        case OPMODE.BATMOVE | OPMODE.BATCOPY:
+            print2log(c.logfile_fd, f'BAT creating {dir}')
+            c.batfile_fd.write(f'MKDIR "{dir}"\n')
     return
 
-def copymove(source, destination, dryrun, move):
+def copymove(source, destination, c):
     dest_path = Path(destination)
     if dest_path.is_file():
-        if dryrun:
-            c.dryrun_fd.write(f'WARN: "{source}" already at "{destination}"\n')
-            return
         if c.mode_nodup:
             root, ext = os.path.splitext(destination)
             destination = f'{root}(1){ext}'
-            print(f'file exists, rename {destination}')
+            print2log(c.logfile_fd, f'file exists, rename copy {destination}')
+            c.rename_transfers += 1
         else:
-            print(f'{destination} exists already')
+            print2log(c.logfile_fd, f'SKIP: "{source}" already at "{destination}"')
+            c.skip_transfers += 1
             return
 
-    if dryrun:
-        op = 'MOVE' if move else 'COPY'
-        c.dryrun_fd.write(f'{op} "{source}" "{destination}"\n')
-    else:
-        if move:
+    match c.opmode:
+        case OPMODE.DRYRUN:
+            op = 'DRYCOPY'
+        case OPMODE.MOVE:
+            op = "COPY"
             shutil.move(source, destination)
-        else:
+        case OPMODE.COPY:
+            op = "MOVE"
             shutil.copy2(source, destination)
+        case OPMODE.BATCOPY:
+            op = "BATCOPY"
+            c.batfile_fd.write(f'COPY "{source}" "{destination}"\n')
+        case OPMODE.BATMOVE:
+            op = "BATMOVE"
+            c.batfile_fd.write(f'MOVE "{source}" "{destination}"\n')
+    c.ok_transfers += 1
+    print2log(c.logfile_fd, f'{op} "{source}" "{destination}"')
     return
-  
+
+def print2log(fd, text):
+    timestamp = datetime.now().isoformat()
+    fd.write(f'{timestamp} {text}\n')
+    return
 
 def extract_year(c, year):
-
+    print2log(c.logfile_fd, f"extract_year {year}")
     this_year_months = []
     for month in c.bin_months.keys():
         if month[0:4] == year:
             this_year_months.append(month)
             
     out_dir = f'{c.output_dir}{os.sep}{year}'
-    dir_create(out_dir, c.mode_dryrun)
+    dir_create(out_dir, c)
     fnum = 0
     mnum = 0
     for month in this_year_months:
         month_out_dir = f'{out_dir}{os.sep}{month}'
-        dir_create(month_out_dir, c.mode_dryrun)
+        dir_create(month_out_dir, c)
         op = 'MOVing' if c.mode_move else 'COPYing'
         bar = Bar(f'{op} {month}', max=len(c.bin_months[month]))
         for file in c.bin_months[month]:
             new_name = f'{month_out_dir}{os.sep}{file.filename}'
             # shutil.move(file.fullpath, new_name)
-            copymove(file.fullpath, new_name, c.mode_dryrun, c.mode_move)
+            copymove(file.fullpath, new_name, c)
             fnum += 1
             bar.next()
         bar.finish()    
         mnum += 1
     op = 'MOVEed' if c.mode_move else 'COPied'
-    print(f'year {year}: {op} {fnum} files for {mnum} months')          
+    end_txt = f'year {year}: {op} {fnum} files for {mnum} months'
+    print(end_txt) 
+    print2log(c.logfile_fd, end_txt)
     return
 
 def version_print():
@@ -473,6 +510,23 @@ def version_print():
     print(f'psort.py version {version}')
     print('CC BY-NC-SA 4.0 Copyright (c) 2024 Ian Leiman')
     print('https://creativecommons.org/licenses/by-nc-sa/4.0/')
+
+def create_logfile(c):
+    logtime = datetime.now().strftime('%Y%m%d_%H%M%S')
+    c.logfile_name = f'{logtime}_LOG.TXT'
+    c.logfile_fd = open(c.logfile_name, 'w')
+    atexit.register(c.logfile_fd.close)
+    print2log(c.logfile_fd, f'logfile start')
+    c.logfile_fd.write(f'{c.args}/n') 
+    return
+
+def create_batfile(c):
+    c.batfile_fd = open(c.batfile_name, 'w')
+    print2log(c.logfile_fd, f'create batfile {c.batfile_name}')
+    c.batfile_fd.write(f'REM this extracts files from {c.import_dir}\n')
+    c.batfile_fd.write('CHCP 1252\n')
+    atexit.register(c.batfile_fd.close)
+    return
         
 ###############################################################################
 # Python script MAIN
@@ -484,7 +538,6 @@ if __name__ == "__main__":
     #
     group2 = parser.add_mutually_exclusive_group()
     group2.add_argument('-y', '--year', help='year to extract')
-    
     group2.add_argument('-s', '--special', help='special date extraction, give date in b arg')       
     group2.add_argument('-t', '--trip', help='do trip sorting, give trip label')    
     group2.add_argument('-r', '--report',help='report only',action='store_true')
@@ -494,7 +547,7 @@ if __name__ == "__main__":
     parser.add_argument('-o','--output', help='output directory') #,required=True)
     parser.add_argument('-n','--name', help='for trip sorting daily prefix label')
     parser.add_argument('-b','--begin', help='begin date of the trip or special event date, format YYYY-MM-DD')
-    parser.add_argument('-B','--batfile', help='create BAT file', action='store_true')
+    parser.add_argument('-B','--batfile', help='create BAT file')
     parser.add_argument('-e','--end', help='end date of the trip, format YYYY-MM-DD')
     parser.add_argument('-d','--dryrun', help='dry run, nothing touched', action='store_true')
     parser.add_argument('-l','--limit', help='file count limit to create directory for a date')
@@ -513,16 +566,30 @@ if __name__ == "__main__":
         quit()
     
     c = Psort_context()
+    c.args = ' '.join(sys.argv)
     c.import_dir = args.input
     c.output_dir = args.output
     # c.trip_dir = args.trip
     c.special_dir = args.special
     c.special_date = args.begin
-    c.mode_bat = args.batfile
-    c.mode_dryrun = args.dryrun
     c.mode_exif = args.exif
-    c.mode_move = args.move
     c.mode_nodup = args.nodup
+    
+    create_logfile(c)
+    
+    if args.batfile:
+        c.mode_bat = True
+        c.opmode = OPMODE.BATCOPY
+        c.batfile_name = args.batfile
+        create_batfile(c)
+    elif args.move:
+        c.mode_move = True
+        c.mode_dryrun = False
+        c.opmode = OPMODE.MOVE
+    else:
+        c.mode_move = False
+        c.mode_dryrun = False
+        c.opmode = OPMODE.COPY       
     
     if args.date:
         c.date = datetime.strptime(args.date, "%Y-%m-%d")
@@ -532,11 +599,12 @@ if __name__ == "__main__":
         print('no start date given')
     
     if args.dryrun:
-        c.dryrun_file = "dryrun.txt"
-        print(f"*** DRY RUN MODE *** nothing is actually done, after exit read {c.dryrun_file} ")
-        c.dryrun_fd = open(c.dryrun_file, 'w')
-        atexit.register(c.dryrun_fd.close)
-    
+        c.opmode = OPMODE.DRYRUN
+        c.mode_dryrun = True
+        #c.dryrun_file = "dryrun.txt"
+        print(f"*** DRY RUN MODE *** nothing is actually done, after exit read {c.logfile_name} ")
+        #c.dryrun_fd = open(c.dryrun_file, 'w')
+        #atexit.register(c.dryrun_fd.close)
 
     check_import_dir(c)
     # walk_dirs(c)
