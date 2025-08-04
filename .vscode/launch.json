@@ -18,7 +18,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": ["-i","Z:\\S21photos\\INCOMING"]
+            "args": ["-d", "-i", "D:\\Dropbox\\3MEDIA\\JPG\\HOME\\2025\\2025-01", "-t", "2025-01 Japan", "-b", "2025-01-09", "-e", "2025-01-25", "-o", "D:\\Dropbox\\3MEDIA\\JPG\\TRAVEL", "-n", "Japan"]
         }   
     ]
 }

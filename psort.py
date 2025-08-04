@@ -5,6 +5,7 @@
 import argparse
 import atexit
 from enum import Enum
+from io import TextIOWrapper
 import os, shutil, sys
 from pathlib import Path
 from datetime import datetime, date, timedelta
@@ -30,9 +31,10 @@ class Psort_context(object):
     """    
     def __init__(self) -> None:   
         self.args = ""
+        self.date: datetime
         self.opmode = OPMODE.DRYRUN
         self.import_dir = ""
-        self.importPath = None
+        self.importPath: Path
         self.output_dir = ""
         self.trip_dir = ""
         self.trip_begin = ""
@@ -44,9 +46,9 @@ class Psort_context(object):
         self.mode_dryrun = False
         self.dryrun_file = "dryrun.txt"
         self.logfile_name = "log.txt"
-        self.logfile_fd = None
+        self.logfile_fd : TextIOWrapper
         self.batfile_name = "PSORT.BAT"
-        self.batfile_fd = None
+        self.batfile_fd : TextIOWrapper
         self.mode_exif = False
         self.mode_move = False
         self.file_list = []     
@@ -63,6 +65,7 @@ class Psort_context(object):
         self.rename_transfers = 0
         self.newdirs_done = 0
         self.newdirs_skip = 0
+        self.mode_nodup = False
         #newdir_list = []
         #move_list = []
 
@@ -89,7 +92,7 @@ class ImportFile(object):
 
 
 ##################################################################################################### 
-def walk_dirs(c):
+def walk_dirs(c: Psort_context):
     in_path = Path(c.import_dir)
     if in_path.is_dir():
         print(f'scanning {c.import_dir}')
@@ -129,7 +132,7 @@ def walk_dirs(c):
     c.import_total += new_filecount
     c.skipped_total += skipped_files
     
-def analyze_file(c, full_path):
+def analyze_file(c: Psort_context, full_path: str):
     if isinstance(full_path, Path):
         filename = full_path.name     
     else:    
@@ -157,7 +160,7 @@ def analyze_file(c, full_path):
     return
 
 
-def scan_files_rec2(c, path):
+def scan_files_rec2(c: Psort_context, path: str):
     obj = os.scandir(path)
     for entry in obj:
         if entry.is_dir():
@@ -175,7 +178,7 @@ def scan_files_rec2(c, path):
     obj.close()
     return
     
-def scan_files_recursive(c, path):
+def scan_files_recursive(c: Psort_context, path: str):
     for entry in os.listdir(path):
         full_path = os.path.join(path, entry)
         if os.path.isdir(full_path):
@@ -185,7 +188,7 @@ def scan_files_recursive(c, path):
             analyze_file(c, full_path)     
     return
 
-def scan_files_iterdir(c, path):
+def scan_files_iterdir(c: Psort_context, path):
     # print(f'iter {path.name}')
     obj = path.iterdir()
     for entry in obj:
@@ -201,7 +204,7 @@ def scan_files_iterdir(c, path):
                 c.skipped_total += 1
     return
 
-def check_import_dir(c):
+def check_import_dir(c: Psort_context):
     c.importPath = Path(c.import_dir)
     if c.importPath.is_dir():
         print(f'scanning {c.import_dir}')
@@ -209,7 +212,7 @@ def check_import_dir(c):
         print(f'ABORT! does not exist: {c.import_dir}')
         quit()
 
-def report_files(c):
+def report_files(c: Psort_context):
     print("JPG files")
     for file in c.jpg_list:
         print(f'{file.number:>6} {file.filename:>16} {file.otime_str} {file.size} {file.d_exif}') 
@@ -218,7 +221,7 @@ def report_files(c):
         print(f'{file.number:>6} {file.filename:>16} {file.otime_str} {file.size}')         
     return
 
-def special_day(c):
+def special_day(c: Psort_context):
     c.bin_days = {}
     c.bin_days[c.special_date] = []
     for file in c.jpg_list:
@@ -229,7 +232,7 @@ def special_day(c):
         quit()
     return        
 
-def group2dmy(c):
+def group2dmy(c: Psort_context):
     day_keys = []
     bin_days = {}
     month_keys = []
@@ -275,7 +278,7 @@ def group2dmy(c):
     c.bin_years = bin_years
     return        
                    
-def print_sorted_days(c):
+def print_sorted_days(c: Psort_context):
     for i, udate in enumerate(c.bin_days.keys()):
         print(f'== {i+1} {udate} { len(c.bin_days[udate]) }') 
         for file in c.bin_days[udate]:
@@ -295,7 +298,7 @@ def print_summary(c):
         print(f' D-BIN #{i+1} date: {udate} files: { len(c.bin_days[udate]) }')  
     return
 
-def extract_special(c):
+def extract_special(c: Psort_context):
     out_dir = f'{c.output_dir}\\{c.special_dir}'
     if c.special_date not in c.bin_days.keys():
         error_txt = f'date {c.special_date} not found, abort operation'
@@ -322,7 +325,7 @@ def extract_special(c):
     return
 
 
-def extract_trip(c):
+def extract_trip(c: Psort_context):
     """_summary_ implements --trip
 
     Args:
@@ -373,7 +376,7 @@ def extract_trip(c):
     print2log(c.logfile_fd, end_txt)   
     return
 
-def dir_create(dir, c):
+def dir_create(dir: str, c: Psort_context):
     dest_path = Path(dir)
     if dest_path.is_dir():
         print2log(c.logfile_fd, f'directory {dir} exists already')
@@ -392,7 +395,7 @@ def dir_create(dir, c):
             c.batfile_fd.write(f'MKDIR "{dir}"\n')
     return
 
-def copymove(source, destination, c):
+def copymove(source: str, destination: str, c: Psort_context):
     dest_path = Path(destination)
     if dest_path.is_file():
         if c.mode_nodup:
@@ -407,12 +410,15 @@ def copymove(source, destination, c):
 
     match c.opmode:
         case OPMODE.DRYRUN:
-            op = 'DRYCOPY'
+            if c.mode_move:
+                op = 'DRYmove'
+            else:    
+                op = 'DRYcopy'
         case OPMODE.MOVE:
-            op = "COPY"
+            op = "MOVE"
             shutil.move(source, destination)
         case OPMODE.COPY:
-            op = "MOVE"
+            op = "COPY2"
             shutil.copy2(source, destination)
         case OPMODE.BATCOPY:
             op = "BATCOPY"
@@ -424,12 +430,12 @@ def copymove(source, destination, c):
     print2log(c.logfile_fd, f'{op} "{source}" "{destination}"')
     return
 
-def print2log(fd, text):
+def print2log(fd: TextIOWrapper, text: str):
     timestamp = datetime.now().isoformat()
     fd.write(f'{timestamp} {text}\n')
     return
 
-def extract_year(c, year):
+def extract_year(c: Psort_context, year: str):
     print2log(c.logfile_fd, f"extract_year {year}")
     this_year_months = []
     for month in c.bin_months.keys():
@@ -460,14 +466,14 @@ def extract_year(c, year):
     return
 
 def version_print():
-    version = 0.7
-    release_date = "2024-10-12"
+    version = 0.9
+    release_date = "2025-08-04"
     print(f'psort.py version {version} released {release_date}')
-    print('CC BY-NC-SA 4.0 Copyright (c) 2024 Ian Leiman')
+    print('CC BY-NC-SA 4.0 Copyright (c) 2025 Ian Leiman')
     print('https://creativecommons.org/licenses/by-nc-sa/4.0/')
     print('https://github.com/eianlei/psort')
 
-def create_logfile(c):
+def create_logfile(c: Psort_context):
     logtime = datetime.now().strftime('%Y%m%d_%H%M%S')
     c.logfile_name = f'{logtime}_LOG.TXT'
     c.logfile_fd = open(c.logfile_name, 'w')
@@ -476,7 +482,7 @@ def create_logfile(c):
     c.logfile_fd.write(f'{c.args}/n') 
     return
 
-def create_batfile(c):
+def create_batfile(c: Psort_context):
     c.batfile_fd = open(c.batfile_name, 'w')
     print2log(c.logfile_fd, f'create batfile {c.batfile_name}')
     c.batfile_fd.write(f'REM this extracts files from {c.import_dir}\n')
