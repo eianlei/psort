@@ -404,9 +404,12 @@ def copymove(source: str, destination: str, c: Psort_context):
             print2log(c.logfile_fd, f'file exists, rename copy {destination}')
             c.rename_transfers += 1
         else:
-            print2log(c.logfile_fd, f'SKIP: "{source}" already at "{destination}"')
-            c.skip_transfers += 1
-            return
+            if c.mode_move:
+                print2log(c.logfile_fd, f'DELETE/MOVE again: "{source}" already at "{destination}"')
+            else:
+                print2log(c.logfile_fd, f'SKIP: "{source}" already at "{destination}"')
+                c.skip_transfers += 1
+                return
 
     match c.opmode:
         case OPMODE.DRYRUN:
